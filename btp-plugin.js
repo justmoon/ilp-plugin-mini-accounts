@@ -2,7 +2,7 @@
 
 const crypto = require('crypto')
 const debug = require('debug')('ilp-plugin-mini-accounts:btp-plugin')
-const EventEmitter = require('events').EventEmitter
+const EventEmitter = require('eventemitter2')
 const BtpPacket = require('btp-packet')
 const IlpPacket = require('ilp-packet')
 const base64url = require('base64url')
@@ -376,6 +376,7 @@ class AbstractBtpPlugin extends EventEmitter {
         JSON.stringify(transfer))
     }
 
+    console.log('INCOMING FULFILL')
     this._safeEmit('incoming_fulfill', transfer, fulfillment, ilp)
 
     await this._call(transfer.from, {
@@ -398,6 +399,7 @@ class AbstractBtpPlugin extends EventEmitter {
     const { ilp } = protocolDataToIlpAndCustom(data)
     const transfer = this._getOutgoingTransferById(transferId)
 
+    console.log('OUTGOING FULFILL')
     this._safeEmit('outgoing_fulfill', transfer, data.fulfillment, ilp)
 
     this._outgoingTransfers.delete(transferId)

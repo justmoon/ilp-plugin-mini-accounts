@@ -5,6 +5,7 @@ const WebSocket = require('ws')
 const assert = require('assert')
 const debug = require('debug')('ilp-plugin-mini-accounts')
 const AbstractBtpPlugin = require('./btp-plugin')
+const StoreWrapper = require('./store-wrapper')
 const base64url = require('base64url')
 
 function tokenToAccount (token) {
@@ -30,10 +31,11 @@ class Plugin extends AbstractBtpPlugin {
 
     this._log = opts._log || console
     this._wss = null
-    this._balances = new Map()
+    this._balances = new StoreWrapper(opts._store)
     this._connections = new Map()
 
     this.on('outgoing_fulfill', this._handleOutgoingFulfill.bind(this))
+    this.on('incoming_fulfill', this._handleIncomingFulfill.bind(this))
     this.on('incoming_reject', this._handleIncomingReject.bind(this))
 
     if (this._modeInfiniteBalances) {
@@ -102,11 +104,14 @@ class Plugin extends AbstractBtpPlugin {
           }
           debug(`account ${account}: processing btp packet ${JSON.stringify(btpPacket)}`)
           try {
+            let operation = Promise.resolve()
             if (btpPacket.type === BtpPacket.TYPE_PREPARE) {
-              this._handleIncomingBtpPrepare(account, btpPacket)
+              operation = this._handleIncomingBtpPrepare(account, btpPacket)
             }
             debug('packet is authorized, forwarding to host')
-            this._handleIncomingBtpPacket(this._prefix + account, btpPacket)
+            operation.then(() => {
+              this._handleIncomingBtpPacket(this._prefix + account, btpPacket)
+            })
           } catch (err) {
             debug('btp packet not accepted', err)
             const errorResponse = BtpPacket.serializeError({
@@ -137,14 +142,15 @@ class Plugin extends AbstractBtpPlugin {
     return !!this._wss
   }
 
-  _handleIncomingBtpPrepare (account, btpPacket) {
+  async _handleIncomingBtpPrepare (account, btpPacket) {
     const prepare = btpPacket.data
     if (prepare.protocolData.length < 1 || prepare.protocolData[0].protocolName !== 'ilp') {
       throw new Error('ILP packet is required')
     }
     // const ilp = IlpPacket.deserializeIlpPayment(prepare.protocolData[0].data)
 
-    const currentBalance = this._balances.get(account) || new BigNumber(0)
+    await this._balances.load(account)
+    const currentBalance = new BigNumber(this._balances.get(account) || 0)
 
     const newBalance = currentBalance.sub(prepare.amount)
 
@@ -152,27 +158,41 @@ class Plugin extends AbstractBtpPlugin {
       throw new Error('Insufficient funds, have: ' + currentBalance + ' need: ' + prepare.amount)
     }
 
-    this._balances.set(account, newBalance)
+    this._balances.set(account, newBalance.toString(), false)
 
     debug(`account ${account} debited ${prepare.amount} units, new balance ${newBalance}`)
   }
 
-  _handleOutgoingFulfill (transfer) {
+  async _handleOutgoingFulfill (transfer) {
     const account = ilpAddressToAccount(this._prefix, transfer.to)
-    const currentBalance = this._balances.get(account) || new BigNumber(0)
+    await this._balances.load(account)
+
+    const currentBalance = new BigNumber(this._balances.get(account) || 0)
     const newBalance = currentBalance.add(transfer.amount)
 
-    this._balances.set(account, newBalance)
+    this._balances.set(account, newBalance.toString(), true)
 
     debug(`account ${account} credited ${transfer.amount} units, new balance ${newBalance}`)
   }
 
-  _handleIncomingReject (transfer) {
+  async _handleIncomingFulfill (transfer) {
     const account = ilpAddressToAccount(this._prefix, transfer.from)
-    const currentBalance = this._balances.get(account) || new BigNumber(0)
+    await this._balances.load(account)
+
+    const currentBalance = new BigNumber(this._balances.get(account) || 0)
+    this._balances.set(account, newBalance.toString(), true)
+
+    debug(`account ${account} finalized ${transfer.amount} units, new balance ${newBalance}`)
+  }
+
+  async _handleIncomingReject (transfer) {
+    const account = ilpAddressToAccount(this._prefix, transfer.from)
+    await this._balances.load(account)
+
+    const currentBalance = new BigNumber(this._balances.get(account) || 0)
     const newBalance = currentBalance.add(transfer.amount)
 
-    this._balances.set(account, newBalance)
+    this._balances.set(account, newBalance.toString(), false)
 
     debug(`account ${account} credited ${transfer.amount} units, new balance ${newBalance}`)
   }

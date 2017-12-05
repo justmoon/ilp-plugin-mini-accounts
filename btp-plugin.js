@@ -408,12 +408,23 @@ class AbstractBtpPlugin extends EventEmitter {
   async rejectIncomingTransfer (transferId, reason) {
     const transfer = this._getIncomingTransferById(transferId)
     const requestId = await _requestId()
+    // reason.forwarded_by should be a string according to LPIv1
+    // but we might as well accept an array also since the ILP error
+    // expects an array
+    let forwardedBy
+    if (Array.isArray(reason.forwarded_by)) {
+      forwardedBy = reason.forwarded_by
+    } else if (typeof reason.forwarded_by === 'string') {
+      forwardedBy = [reason.forwarded_by]
+    } else {
+      forwardedBy = []
+    }
     const rejectionReason = IlpPacket.serializeIlpError({
       code: reason.code,
       name: reason.name,
       message: reason.message,
       triggeredBy: reason.triggered_by || '',
-      forwardedBy: reason.forwarded_by || [],
+      forwardedBy,
       triggeredAt: (reason.triggered_at && new Date(reason.triggered_at)) || new Date(),
       data: (reason.additional_info && JSON.stringify(reason.additional_info)) || ''
     })

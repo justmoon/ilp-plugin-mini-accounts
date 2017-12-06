@@ -365,7 +365,11 @@ class AbstractBtpPlugin extends EventEmitter {
 
   async fulfillCondition (transferId, fulfillment, ilp) {
     const protocolData = ilp
-      ? [{ protocolName: 'ilp', contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM, data: ilp }]
+      ? [{
+        protocolName: 'ilp',
+        contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
+        data: Buffer.from(ilp, 'base64')
+      }]
       : []
     const requestId = await _requestId()
 

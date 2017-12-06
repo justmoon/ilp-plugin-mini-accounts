@@ -207,7 +207,7 @@ class Plugin extends AbstractBtpPlugin {
 
       result.catch(err => {
         const errorInfo = (typeof err === 'object' && err.stack) ? err.stack : String(err)
-        debug('unable to send btp message to client: ' + errorInfo)
+        debug('unable to send btp message to client: ' + errorInfo, 'btp packet:', JSON.stringify(btpPacket))
       })
     })
 

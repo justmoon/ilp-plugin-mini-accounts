@@ -13,13 +13,6 @@ function tokenToAccount (token) {
   return base64url(crypto.createHash('sha256').update(token).digest('sha256'))
 }
 
-function ilpAddressToAccount (prefix, ilpAddress) {
-  if (ilpAddress.substr(0, prefix.length) !== prefix) {
-    throw new Error('ILP address (' + ilpAddress + ') must start with prefix (' + prefix + ')')
-  }
-
-  return ilpAddress.substr(prefix.length).split('.')[0]
-}
 
 class Plugin extends AbstractBtpPlugin {
   constructor (opts) {
@@ -39,6 +32,14 @@ class Plugin extends AbstractBtpPlugin {
     }
   }
 
+  ilpAddressToAccount (ilpAddress) {
+    if (ilpAddress.substr(0, this._prefix.length) !== this._prefix) {
+      throw new Error('ILP address (' + ilpAddress + ') must start with prefix (' + this._prefix + ')')
+    }
+
+    return ilpAddress.substr(this._prefix.length).split('.')[0]
+  }
+
   async connect () {
     if (this._wss) return
 
@@ -55,7 +56,7 @@ class Plugin extends AbstractBtpPlugin {
       // The first message must be an auth packet
       // with the macaroon as the auth_token
       let authPacket
-      wsIncoming.once('message', (binaryAuthMessage) => {
+      wsIncoming.once('message', async (binaryAuthMessage) => {
         try {
           authPacket = BtpPacket.deserialize(binaryAuthMessage)
           assert.equal(authPacket.type, BtpPacket.TYPE_MESSAGE, 'First message sent over BTP connection must be auth packet')
@@ -69,13 +70,17 @@ class Plugin extends AbstractBtpPlugin {
 
               let connections = this._connections.get(account)
               if (!connections) {
-                this._connections.set(account, connections = new Set())
+                this._connections.set(this._prefix +  account, connections = new Set())
               }
 
               connections.add(wsIncoming)
             }
           }
           assert(token, 'auth_token subprotocol is required')
+
+          if (this._connect) {
+            await this._connect(account, authPacket)
+          }
 
           wsIncoming.send(BtpPacket.serializeResponse(authPacket.requestId, []))
         } catch (err) {
@@ -122,7 +127,11 @@ class Plugin extends AbstractBtpPlugin {
     return null
   }
 
-  disconnect () {
+  async disconnect () {
+    if (this._disconnect) {
+      await this._disconnect()
+    }
+
     if (this._wss) {
       return new Promise(resolve => {
         this._wss.close(resolve)
@@ -146,6 +155,9 @@ class Plugin extends AbstractBtpPlugin {
         break
       case IlpPacket.Type.TYPE_ILP_PREPARE:
         destination = parsedPacket.data.destination
+        if (this._sendPrepare) {
+          this._sendPrepare(destination, parsedPacket)
+        }
         break
       case IlpPacket.Type.TYPE_ILQP_LIQUIDITY_REQUEST:
       case IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST:
@@ -173,26 +185,18 @@ class Plugin extends AbstractBtpPlugin {
     const ilpResponse = response.protocolData
       .filter(p => p.protocolName === 'ilp')[0]
 
+    if (this._handlePrepareResponse) {
+      this._handlePrepareResponse(destination, IlpPacket.deserializeIlpPacket(ilpResponse), parsedPacket)
+    }
+
     return ilpResponse
       ? ilpResponse.data
       : Buffer.alloc(0)
   }
 
   async _handleData (from, btpPacket) {
-    const ilpProtocolData = btpPacket.data.protocolData.find(p => p.protocolName === 'ilp')
-
-    if (!ilpProtocolData) {
-      debug('invalid packet, no ilp protocol data. from=%s', from)
-      throw new Error('invalid packet, no ilp protocol data.')
-    }
-
-    const packet = ilpProtocolData.data
-
-    if (!this._dataHandler) {
-      throw new Error('no request handler registered')
-    }
-
-    const parsedPacket = IlpPacket.deserializeIlpPacket(packet)
+    const { ilp, protocolMap } = this.protocolDataToIlpAndCustom(btpPacket)
+    const parsedPacket = IlpPacket.deserializeIlpPacket(ilp)
 
     if (parsedPacket.data.destination === 'peer.config') {
       debug('responding to ILDCP request. clientAddress=%s', from)
@@ -200,7 +204,7 @@ class Plugin extends AbstractBtpPlugin {
         protocolName: 'ilp',
         contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
         data: await ILDCP.serve({
-          requestPacket: packet,
+          requestPacket: ilp,
           handler: () => ({
             ...this._hostIldcpInfo,
             clientAddress: from
@@ -210,65 +214,22 @@ class Plugin extends AbstractBtpPlugin {
       }]
     }
 
-    const response = await this._dataHandler(packet)
-
-    return [{
-      protocolName: 'ilp',
-      contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
-      data: response
-    }]
-  }
-
-  _handleIncomingBtpPrepare (account, btpPacket) {
-    const prepare = btpPacket.data
-    if (prepare.protocolData.length < 1 || prepare.protocolData[0].protocolName !== 'ilp') {
-      throw new Error('ILP packet is required')
-    }
-    // const ilp = IlpPacket.deserializeIlpPayment(prepare.protocolData[0].data)
-
-    const currentBalance = this._balances.get(account) || new BigNumber(0)
-
-    const newBalance = currentBalance.sub(prepare.amount)
-
-    if (newBalance.lessThan(0) && !this._modeInfiniteBalances) {
-      throw new Error('Insufficient funds, have: ' + currentBalance + ' need: ' + prepare.amount)
+    if (this._handleCustomData) {
+      debug('passing non-ilp data to custom handler')
+      return this._handleCustomData(from, btpPacket)
     }
 
-    this._balances.set(account, newBalance)
-
-    debug(`account ${account} debited ${prepare.amount} units, new balance ${newBalance}`)
-  }
-
-  _handleOutgoingFulfill (transfer) {
-    const account = ilpAddressToAccount(this._prefix, transfer.to)
-    const currentBalance = this._balances.get(account) || new BigNumber(0)
-    const newBalance = currentBalance.add(transfer.amount)
-
-    this._balances.set(account, newBalance)
-
-    debug(`account ${account} credited ${transfer.amount} units, new balance ${newBalance}`)
-  }
-
-  _handleIncomingReject (transfer) {
-    const account = ilpAddressToAccount(this._prefix, transfer.from)
-    const currentBalance = this._balances.get(account) || new BigNumber(0)
-    const newBalance = currentBalance.add(transfer.amount)
-
-    this._balances.set(account, newBalance)
-
-    debug(`account ${account} credited ${transfer.amount} units, new balance ${newBalance}`)
-  }
-
-  getAccount () {
-    return this._prefix + 'server'
-  }
-
-  getInfo () {
-    return {
-      prefix: this._prefix,
-      connectors: [],
-      currencyScale: this._currencyScale
+    if (!ilp) {
+      debug('invalid packet, no ilp protocol data. from=%s', from)
+      throw new Error('invalid packet, no ilp protocol data.')
     }
+
+    if (!this._dataHandler) {
+      throw new Error('no request handler registered')
+    }
+
+    const response = await this._dataHandler(ilp)
+    return this.ilpAndCustomToProtocolData({ ilp: response })
   }
 
   async _handleOutgoingBtpPacket (to, btpPacket) {
@@ -276,7 +237,7 @@ class Plugin extends AbstractBtpPlugin {
       throw new Error(`invalid destination, must start with prefix. destination=${to} prefix=${this._prefix}`)
     }
 
-    const account = ilpAddressToAccount(this._prefix, to)
+    const account = this.ilpAddressToAccount(to)
 
     const connections = this._connections.get(account)
 
@@ -292,8 +253,6 @@ class Plugin extends AbstractBtpPlugin {
         debug('unable to send btp message to client: ' + errorInfo, 'btp packet:', JSON.stringify(btpPacket))
       })
     })
-
-    await Promise.all(results)
 
     return null
   }

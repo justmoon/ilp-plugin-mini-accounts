@@ -47,6 +47,10 @@ class Plugin extends AbstractBtpPlugin {
     this._hostIldcpInfo = this._debugHostIldcpInfo || await ILDCP.fetch(this._dataHandler.bind(this))
     this._prefix = this._hostIldcpInfo.clientAddress + '.'
 
+    if (this._preConnect) {
+      await this._preConnect()
+    }
+
     debug('listening on port ' + this._wsOpts.port)
     const wss = this._wss = new WebSocket.Server(this._wsOpts)
     wss.on('connection', (wsIncoming) => {
@@ -71,7 +75,7 @@ class Plugin extends AbstractBtpPlugin {
 
               let connections = this._connections.get(account)
               if (!connections) {
-                this._connections.set(this._prefix +  account, connections = new Set())
+                this._connections.set(account, connections = new Set())
               }
 
               connections.add(wsIncoming)
@@ -80,16 +84,18 @@ class Plugin extends AbstractBtpPlugin {
           assert(token, 'auth_token subprotocol is required')
 
           if (this._connect) {
-            await this._connect(account, authPacket)
+            await this._connect(this._prefix + account, authPacket)
           }
 
           wsIncoming.send(BtpPacket.serializeResponse(authPacket.requestId, []))
         } catch (err) {
           if (authPacket) {
+            debug('not accepted error during auth. error=', err)
+            debug(typeof err)
             const errorResponse = BtpPacket.serializeError({
               code: 'F00',
               name: 'NotAcceptedError',
-              data: err.message,
+              data: err.message || err.name,
               triggeredAt: new Date().toISOString()
             }, authPacket.requestId, [])
             wsIncoming.send(errorResponse)
@@ -169,6 +175,10 @@ class Plugin extends AbstractBtpPlugin {
         throw new Error('can\'t route packet with no destination. type=' + parsedPacket.type)
     }
 
+    if (destination === 'peer.config') {
+      return ILDCP.serializeIldcpResponse(this._hostIldcpInfo)
+    }
+
     if (!destination.startsWith(this._prefix)) {
       throw new Error(`can't route packet that is not meant for one of my clients. destination=${destination} prefix=${this._prefix}`)
     }
@@ -187,7 +197,9 @@ class Plugin extends AbstractBtpPlugin {
       .filter(p => p.protocolName === 'ilp')[0]
 
     if (this._handlePrepareResponse) {
-      this._handlePrepareResponse(destination, IlpPacket.deserializeIlpPacket(ilpResponse), parsedPacket)
+      this._handlePrepareResponse(destination,
+        IlpPacket.deserializeIlpPacket(ilpResponse.data),
+        parsedPacket)
     }
 
     return ilpResponse
@@ -196,23 +208,26 @@ class Plugin extends AbstractBtpPlugin {
   }
 
   async _handleData (from, btpPacket) {
-    const { ilp, protocolMap } = this.protocolDataToIlpAndCustom(btpPacket)
-    const parsedPacket = IlpPacket.deserializeIlpPacket(ilp)
+    const { ilp, protocolMap } = this.protocolDataToIlpAndCustom(btpPacket.data)
 
-    if (parsedPacket.data.destination === 'peer.config') {
-      debug('responding to ILDCP request. clientAddress=%s', from)
-      return [{
-        protocolName: 'ilp',
-        contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
-        data: await ILDCP.serve({
-          requestPacket: ilp,
-          handler: () => ({
-            ...this._hostIldcpInfo,
-            clientAddress: from
-          }),
-          serverAddress: this._hostIldcpInfo.clientAddress
-        })
-      }]
+    if (ilp) {
+      const parsedPacket = IlpPacket.deserializeIlpPacket(ilp)
+
+      if (parsedPacket.data.destination === 'peer.config') {
+        debug('responding to ILDCP request. clientAddress=%s', from)
+        return [{
+          protocolName: 'ilp',
+          contentType: BtpPacket.MIME_APPLICATION_OCTET_STREAM,
+          data: await ILDCP.serve({
+            requestPacket: ilp,
+            handler: () => ({
+              ...this._hostIldcpInfo,
+              clientAddress: from
+            }),
+            serverAddress: this._hostIldcpInfo.clientAddress
+          })
+        }]
+      }
     }
 
     if (this._handleCustomData) {
@@ -239,7 +254,6 @@ class Plugin extends AbstractBtpPlugin {
     }
 
     const account = this.ilpAddressToAccount(to)
-
     const connections = this._connections.get(account)
 
     if (!connections) {

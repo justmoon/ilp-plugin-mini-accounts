@@ -21,6 +21,7 @@ class Plugin extends AbstractBtpPlugin {
     this._wsOpts = opts.wsOpts || { port: defaultPort }
     this._currencyScale = opts.currencyScale || 9
     this._modeInfiniteBalances = !!opts.debugInfiniteBalances
+    this._debugHostIldcpInfo = opts.debugHostIldcpInfo
 
     this._log = opts._log || console
     this._wss = null
@@ -43,7 +44,7 @@ class Plugin extends AbstractBtpPlugin {
   async connect () {
     if (this._wss) return
 
-    this._hostIldcpInfo = await ILDCP.fetch(this._dataHandler.bind(this))
+    this._hostIldcpInfo = this._debugHostIldcpInfo || await ILDCP.fetch(this._dataHandler.bind(this))
     this._prefix = this._hostIldcpInfo.clientAddress + '.'
 
     debug('listening on port ' + this._wsOpts.port)

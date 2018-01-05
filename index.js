@@ -20,17 +20,11 @@ class Plugin extends AbstractBtpPlugin {
     const defaultPort =  opts.port || 3000
     this._wsOpts = opts.wsOpts || { port: defaultPort }
     this._currencyScale = opts.currencyScale || 9
-    this._modeInfiniteBalances = !!opts.debugInfiniteBalances
     this._debugHostIldcpInfo = opts.debugHostIldcpInfo
 
     this._log = opts._log || console
     this._wss = null
-    this._balances = new Map()
     this._connections = new Map()
-
-    if (this._modeInfiniteBalances) {
-      this._log.warn('(!!!) granting all users infinite balances')
-    }
   }
 
   ilpAddressToAccount (ilpAddress) {

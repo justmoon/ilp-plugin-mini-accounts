@@ -47,7 +47,7 @@ class Plugin extends AbstractBtpPlugin {
 
     debug('listening on port ' + this._wsOpts.port)
     const wss = this._wss = new WebSocket.Server(this._wsOpts)
-    wss.on('connection', (wsIncoming) => {
+    wss.on('connection', (wsIncoming, req) => {
       debug('got connection')
       let token
       let account
@@ -78,14 +78,16 @@ class Plugin extends AbstractBtpPlugin {
           assert(token, 'auth_token subprotocol is required')
 
           if (this._connect) {
-            await this._connect(this._prefix + account, authPacket)
+            await this._connect(this._prefix + account, authPacket, {
+              ws: wsIncoming,
+              req
+            })
           }
 
           wsIncoming.send(BtpPacket.serializeResponse(authPacket.requestId, []))
         } catch (err) {
           if (authPacket) {
             debug('not accepted error during auth. error=', err)
-            debug(typeof err)
             const errorResponse = BtpPacket.serializeError({
               code: 'F00',
               name: 'NotAcceptedError',

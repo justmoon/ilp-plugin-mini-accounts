@@ -149,12 +149,14 @@ class Plugin extends AbstractBtpPlugin {
     const parsedPacket = IlpPacket.deserializeIlpPacket(buffer)
 
     let destination
+    let isPrepare = false
     switch (parsedPacket.type) {
       case IlpPacket.Type.TYPE_ILP_PAYMENT:
       case IlpPacket.Type.TYPE_ILP_FORWARDED_PAYMENT:
         destination = parsedPacket.data.account
         break
       case IlpPacket.Type.TYPE_ILP_PREPARE:
+        isPrepare = true
         destination = parsedPacket.data.destination
         if (this._sendPrepare) {
           this._sendPrepare(destination, parsedPacket)
@@ -190,7 +192,7 @@ class Plugin extends AbstractBtpPlugin {
     const ilpResponse = response.protocolData
       .filter(p => p.protocolName === 'ilp')[0]
 
-    if (this._handlePrepareResponse) {
+    if (isPrepare && this._handlePrepareResponse) {
       this._handlePrepareResponse(destination,
         IlpPacket.deserializeIlpPacket(ilpResponse.data),
         parsedPacket)
@@ -225,7 +227,7 @@ class Plugin extends AbstractBtpPlugin {
     }
 
     if (this._handleCustomData) {
-      debug('passing non-ilp data to custom handler')
+      debug('passing non-ILDCP data to custom handler')
       return this._handleCustomData(from, btpPacket)
     }
 

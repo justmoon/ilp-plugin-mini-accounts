@@ -72,7 +72,9 @@ class Plugin extends AbstractBtpPlugin {
 
               connections.add(wsIncoming)
             } else if (subProtocol.protocolName === 'auth_username') {
-              account = subProtocol.data.toString()
+              if (this._store) {
+                account = subProtocol.data.toString()
+              }
             }
           }
           assert(token, 'auth_token subprotocol is required')

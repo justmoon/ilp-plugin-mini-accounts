@@ -1,6 +1,5 @@
 const crypto = require('crypto')
 const BtpPacket = require('btp-packet')
-const BigNumber = require('bignumber.js')
 const WebSocket = require('ws')
 const assert = require('assert')
 const debug = require('debug')('ilp-plugin-mini-accounts')
@@ -13,11 +12,10 @@ function tokenToAccount (token) {
   return base64url(crypto.createHash('sha256').update(token).digest('sha256'))
 }
 
-
 class Plugin extends AbstractBtpPlugin {
   constructor (opts) {
     super({})
-    const defaultPort =  opts.port || 3000
+    const defaultPort = opts.port || 3000
     this._wsOpts = opts.wsOpts || { port: defaultPort }
     this._currencyScale = opts.currencyScale || 9
     this._debugHostIldcpInfo = opts.debugHostIldcpInfo
@@ -64,8 +62,8 @@ class Plugin extends AbstractBtpPlugin {
           for (let subProtocol of authPacket.data.protocolData) {
             if (subProtocol.protocolName === 'auth_token') {
               // TODO: Do some validation on the token
-              token = subProtocol.data
-              account = tokenToAccount(token)
+              token = subProtocol.data.toString()
+              account = account || tokenToAccount(token)
 
               let connections = this._connections.get(account)
               if (!connections) {
@@ -73,9 +71,21 @@ class Plugin extends AbstractBtpPlugin {
               }
 
               connections.add(wsIncoming)
+            } else if (subProtocol.protocolName === 'auth_username') {
+              account = subProtocol.data.toString()
             }
           }
           assert(token, 'auth_token subprotocol is required')
+
+          if (this._store) {
+            await this._store.load(account)
+            if (this._store.get(account) !== token) {
+              throw new Error('incorrect token for account.' +
+                ' account=' + account +
+                ' token=' + token)
+            }
+            this._store.set(account, token)
+          }
 
           if (this._connect) {
             await this._connect(this._prefix + account, authPacket, {
@@ -206,7 +216,7 @@ class Plugin extends AbstractBtpPlugin {
   }
 
   async _handleData (from, btpPacket) {
-    const { ilp, protocolMap } = this.protocolDataToIlpAndCustom(btpPacket.data)
+    const { ilp } = this.protocolDataToIlpAndCustom(btpPacket.data)
 
     if (ilp) {
       const parsedPacket = IlpPacket.deserializeIlpPacket(ilp)
@@ -258,7 +268,7 @@ class Plugin extends AbstractBtpPlugin {
       throw new Error('No clients connected for account ' + account)
     }
 
-    const results = Array.from(connections).map(wsIncoming => {
+    Array.from(connections).map(wsIncoming => {
       const result = new Promise(resolve => wsIncoming.send(BtpPacket.serialize(btpPacket), resolve))
 
       result.catch(err => {

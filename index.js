@@ -77,6 +77,7 @@ class Plugin extends AbstractBtpPlugin {
           }
           assert(token, 'auth_token subprotocol is required')
 
+          debug('got auth info. token=' + token, 'account=' + account)
           if (this._store) {
             await this._store.load(account)
             if (this._store.get(account) !== token) {

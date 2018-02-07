@@ -66,13 +66,18 @@ class Plugin extends AbstractBtpPlugin {
       let token
       let account
 
-      wsIncoming.on('close', code => {
-        debug('incoming ws close. code=' + code)
-      })
+      const closeHandler = error => {
+        debug('incoming ws closed. error=', error)
+        if (this._close) {
+          this._close(this._prefix + '.' + account, code)
+            .catch(e => {
+              debug('error during custom close handler. error=', e)
+            })
+        }
+      }
 
-      wsIncoming.on('error', e => {
-        debug('incoming ws error. error=', e)
-      })
+      wsIncoming.on('close', closeHandler)
+      wsIncoming.on('error', closeHandler)
 
       // The first message must be an auth packet
       // with the macaroon as the auth_token

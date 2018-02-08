@@ -129,7 +129,7 @@ class Plugin extends AbstractBtpPlugin {
 
         debug('connection authenticated')
 
-        wsIncoming.on('message', (binaryMessage) => {
+        wsIncoming.on('message', async (binaryMessage) => {
           let btpPacket
           try {
             btpPacket = BtpPacket.deserialize(binaryMessage)
@@ -139,7 +139,7 @@ class Plugin extends AbstractBtpPlugin {
           debug(`account ${account}: processing btp packet ${JSON.stringify(btpPacket)}`)
           try {
             debug('packet is authorized, forwarding to host')
-            this._handleIncomingBtpPacket(this._prefix + account, btpPacket)
+            await this._handleIncomingBtpPacket(this._prefix + account, btpPacket)
           } catch (err) {
             debug('btp packet not accepted', err)
             const errorResponse = BtpPacket.serializeError({

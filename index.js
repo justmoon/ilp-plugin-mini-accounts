@@ -69,7 +69,7 @@ class Plugin extends AbstractBtpPlugin {
       const closeHandler = error => {
         debug('incoming ws closed. error=', error)
         if (this._close) {
-          this._close(this._prefix + '.' + account, code)
+          this._close(this._prefix + account, error)
             .catch(e => {
               debug('error during custom close handler. error=', e)
             })

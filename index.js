@@ -243,9 +243,13 @@ class Plugin extends AbstractBtpPlugin {
       .filter(p => p.protocolName === 'ilp')[0]
 
     if (isPrepare && this._handlePrepareResponse) {
-      this._handlePrepareResponse(destination,
-        IlpPacket.deserializeIlpPacket(ilpResponse.data),
-        parsedPacket)
+      try {
+        this._handlePrepareResponse(destination,
+          IlpPacket.deserializeIlpPacket(ilpResponse.data),
+          parsedPacket)
+      } catch (e) {
+        return IlpPacket.errorToReject(this._hostIldcpInfo.clientAddress, e)
+      }
     }
 
     return ilpResponse

@@ -69,5 +69,57 @@ describe('Mini Accounts Plugin', () => {
         data: Buffer.alloc(0)
       })
     })
+
+    it('should return ilp fulfill when in-packet destination is local', async function () {
+      const result = await this.plugin.sendData(IlpPacket.serializeIlpPrepare({
+        destination: this.from,
+        amount: '123',
+        executionCondition: this.condition,
+        expiresAt: new Date(Date.now() + 10000),
+        data: Buffer.alloc(0)
+      }))
+
+      const parsed = IlpPacket.deserializeIlpPacket(result)
+
+      assert.equal(parsed.typeString, 'ilp_fulfill')
+      assert.deepEqual(parsed.data, {
+        fulfillment: this.fulfillment,
+        data: Buffer.alloc(0)
+      })
+    })
+
+    it('should throw an error when in-packet destination is remote and no to is specified', async function () {
+      try {
+        await this.plugin.sendData(IlpPacket.serializeIlpPrepare({
+          destination: 'can.not.be.reached',
+          amount: '123',
+          executionCondition: this.condition,
+          expiresAt: new Date(Date.now() + 10000),
+          data: Buffer.alloc(0)
+        }))
+        throw new Error('should not reach here')
+      } catch (e) {
+        assert.equal(e.message, 'can\'t route packet that is not meant for one of my clients. to=undefined destination=can.not.be.reached prefix=test.example.')
+        // ok
+      }
+    })
+
+    it('should return ilp fulfill when in-packet destination is remote but to is specified', async function () {
+      const result = await this.plugin.sendData(IlpPacket.serializeIlpPrepare({
+        destination: 'can.not.be.reached',
+        amount: '123',
+        executionCondition: this.condition,
+        expiresAt: new Date(Date.now() + 10000),
+        data: Buffer.alloc(0)
+      }), this.from)
+
+      const parsed = IlpPacket.deserializeIlpPacket(result)
+
+      assert.equal(parsed.typeString, 'ilp_fulfill')
+      assert.deepEqual(parsed.data, {
+        fulfillment: this.fulfillment,
+        data: Buffer.alloc(0)
+      })
+    })
   })
 })

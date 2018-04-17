@@ -197,7 +197,7 @@ class Plugin extends AbstractBtpPlugin {
     return !!this._wss
   }
 
-  async sendData (buffer) {
+  async sendData (buffer, to) {
     const parsedPacket = IlpPacket.deserializeIlpPacket(buffer)
 
     let destination
@@ -205,11 +205,11 @@ class Plugin extends AbstractBtpPlugin {
     switch (parsedPacket.type) {
       case IlpPacket.Type.TYPE_ILP_PAYMENT:
       case IlpPacket.Type.TYPE_ILP_FORWARDED_PAYMENT:
-        destination = parsedPacket.data.account
+        destination = to || parsedPacket.data.account
         break
       case IlpPacket.Type.TYPE_ILP_PREPARE:
         isPrepare = true
-        destination = parsedPacket.data.destination
+        destination = to || parsedPacket.data.destination
         if (this._sendPrepare) {
           this._sendPrepare(destination, parsedPacket)
         }
@@ -217,7 +217,7 @@ class Plugin extends AbstractBtpPlugin {
       case IlpPacket.Type.TYPE_ILQP_LIQUIDITY_REQUEST:
       case IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST:
       case IlpPacket.Type.TYPE_ILQP_BY_DESTINATION_REQUEST:
-        destination = parsedPacket.data.destinationAccount
+        destination = to || parsedPacket.data.destinationAccount
         break
       default:
         throw new Error('can\'t route packet with no destination. type=' + parsedPacket.type)
@@ -228,7 +228,7 @@ class Plugin extends AbstractBtpPlugin {
     }
 
     if (!destination.startsWith(this._prefix)) {
-      throw new Error(`can't route packet that is not meant for one of my clients. destination=${destination} prefix=${this._prefix}`)
+      throw new Error(`can't route packet that is not meant for one of my clients. to=${to} destination=${destination} prefix=${this._prefix}`)
     }
 
     const response = await this._call(destination, {

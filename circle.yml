@@ -3,7 +3,8 @@ machine:
     version: 8.9.4
 test:
   override:
-    - echo "No tests specified."
+    - npm run lint
+    - npm test
 deployment:
   production:
     branch: master

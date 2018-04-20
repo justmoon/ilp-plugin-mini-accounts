@@ -1,4 +1,4 @@
-'use strict'
+'use strict' /* eslint-env mocha */
 
 const BtpPacket = require('btp-packet')
 const crypto = require('crypto')
@@ -11,7 +11,6 @@ const sinon = require('sinon')
 
 const PluginMiniAccounts = require('..')
 const Store = require('ilp-store-memory')
-const WebSocket = require('ws')
 const base64url = require('base64url')
 const sendAuthPaket = require('./helper/btp-util')
 

@@ -33,6 +33,7 @@
     "ilp-packet": "^2.2.0",
     "ilp-plugin-btp": "^1.1.3",
     "ilp-protocol-ildcp": "^1.0.0",
+    "ilp-store-memory": "^1.0.0",
     "ilp-store-wrapper": "^1.0.0",
     "int64": "0.0.5",
     "ws": "^3.3.0"
@@ -47,7 +48,8 @@
     "eslint-plugin-promise": "^3.6.0",
     "eslint-plugin-standard": "^3.0.1",
     "get-port": "^3.2.0",
-    "mocha": "^5.0.0"
+    "mocha": "^5.0.0",
+    "sinon": "^4.5.0"
   },
   "engines": {
     "node": ">=8.3.0"

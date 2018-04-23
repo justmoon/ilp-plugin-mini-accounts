@@ -25,7 +25,7 @@ class Token {
   }
 
   exists () {
-    return !!this._hashedToken
+    return !!(this._store && this._store.get(TOKEN(this._account)))
   }
 
   save () {

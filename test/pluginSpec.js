@@ -13,8 +13,9 @@ const PluginMiniAccounts = require('..')
 const Store = require('ilp-store-memory')
 const base64url = require('base64url')
 const sendAuthPaket = require('./helper/btp-util')
+const Token = require('../src/token')
 
-function tokenToAccount (token) {
+function sha256 (token) {
   return base64url(crypto.createHash('sha256').update(token).digest('sha256'))
 }
 
@@ -52,14 +53,18 @@ describe('Mini Accounts Plugin', () => {
       await sendAuthPaket(this.serverUrl, 'acc', 'secret_token')
 
       // assert that a new account was written to the store with a hashed token
-      const expectedToken = tokenToAccount('secret_token')
-      assert.isTrue(spy.calledWith('acc:token', expectedToken),
+      const expectedToken = sha256('secret_token')
+      assert.isTrue(spy.calledWith('acc:hashed-token', expectedToken),
         `expected new account written to store with value ${expectedToken}, but wasn't`)
     })
 
     describe('if account exists', function () {
       beforeEach(function () {
-        this.plugin._store.set('acc:token', tokenToAccount('secret_token'))
+        new Token({
+          account: 'acc',
+          token: 'secret_token',
+          store: this.plugin._store
+        }).save()
       })
 
       it('fails if received token does not match stored token', async function () {
@@ -74,6 +79,14 @@ describe('Mini Accounts Plugin', () => {
       it('succeeds if received token matches stored token', async function () {
         const msg = await sendAuthPaket(this.serverUrl, 'acc', 'secret_token')
         assert.strictEqual(msg.type, BtpPacket.TYPE_RESPONSE)
+      })
+
+      it('migrates an unhashed token', async function () {
+        this.plugin._store.set('other_acc:token', 'unhashed')
+        const token = await Token.load({account: 'other_acc', store: this.plugin._store})
+        assert.isUndefined(this.plugin._store.get('other_acc:token'))
+        assert.strictEqual(token._account, 'other_acc')
+        assert.strictEqual(token._hashedToken, sha256('unhashed'))
       })
     })
   })

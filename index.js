@@ -11,6 +11,7 @@ const ILDCP = require('ilp-protocol-ildcp')
 const IlpPacket = require('ilp-packet')
 const StoreWrapper = require('ilp-store-wrapper')
 const OriginWhitelist = require('./src/lib/origin-whitelist')
+const Token = require('./src/token')
 
 function tokenToAccount (token) {
   return base64url(crypto.createHash('sha256').update(token).digest('sha256'))
@@ -117,14 +118,17 @@ class Plugin extends AbstractBtpPlugin {
 
           debug('got auth info. token=' + token, 'account=' + account)
           if (this._store) {
-            await this._store.load(account + ':token')
-            const storedToken = this._store.get(account + ':token')
-            if (storedToken && storedToken !== tokenToAccount(token)) {
-              throw new Error('incorrect token for account.' +
-                ' account=' + account +
-                ' token=' + token)
+            const storedToken = await Token.load({account, store: this._store})
+            const receivedToken = new Token({account, token, store: this._store})
+            if (storedToken.exists()) {
+              if (!storedToken.equal(receivedToken)) {
+                throw new Error('incorrect token for account.' +
+                  ' account=' + account +
+                  ' token=' + token)
+              }
+            } else {
+              receivedToken.save()
             }
-            this._store.set(account + ':token', tokenToAccount(token))
           }
 
           if (this._connect) {

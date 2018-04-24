@@ -48,17 +48,36 @@ describe('Mini Accounts Plugin', () => {
       this.serverUrl = 'ws://localhost:' + this.port
     })
 
-    it('stores hashed token if account does not exist', async function () {
-      const spy = sinon.spy(this.plugin._store, 'set')
-      await sendAuthPaket(this.serverUrl, 'acc', 'secret_token')
+    describe('new account', function () {
+      it('stores hashed token if account does not exist', async function () {
+        const spy = sinon.spy(this.plugin._store, 'set')
+        await sendAuthPaket(this.serverUrl, 'acc', 'secret_token')
 
-      // assert that a new account was written to the store with a hashed token
-      const expectedToken = sha256('secret_token')
-      assert.isTrue(spy.calledWith('acc:hashed-token', expectedToken),
-        `expected new account written to store with value ${expectedToken}, but wasn't`)
+        // assert that a new account was written to the store with a hashed token
+        const expectedToken = sha256('secret_token')
+        assert.isTrue(spy.calledWith('acc:hashed-token', expectedToken),
+          `expected new account written to store with value ${expectedToken}, but wasn't`)
+      })
+
+      it('does not race when storing the token', async function () {
+        const realStoreLoad = this.plugin._store.load.bind(this.plugin._store)
+        sinon.stub(this.plugin._store, 'load').onFirstCall().callsFake(async (...args) => {
+          // forces a race condition
+          await sendAuthPaket(this.serverUrl, 'acc', '2nd_secret_token')
+          return realStoreLoad(...args)
+        })
+
+        const msg = await sendAuthPaket(this.serverUrl, 'acc', '1st_secret_token')
+        assert.strictEqual(msg.type, BtpPacket.TYPE_ERROR, 'expected an BTP error')
+        assert.strictEqual(msg.data.code, 'F00')
+        assert.strictEqual(msg.data.name, 'NotAcceptedError')
+        assert.match(msg.data.data, /incorrect token for account/)
+
+        assert.strictEqual(this.plugin._store.get('acc:hashed-token'), sha256('2nd_secret_token'))
+      })
     })
 
-    describe('if account exists', function () {
+    describe('existing account', function () {
       beforeEach(function () {
         new Token({
           account: 'acc',

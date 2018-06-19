@@ -9,6 +9,7 @@ const AbstractBtpPlugin = require('ilp-plugin-btp')
 const base64url = require('base64url')
 const ILDCP = require('ilp-protocol-ildcp')
 const IlpPacket = require('ilp-packet')
+const { Errors } = IlpPacket
 const StoreWrapper = require('ilp-store-wrapper')
 const OriginWhitelist = require('./src/lib/origin-whitelist')
 const Token = require('./src/token')
@@ -245,14 +246,25 @@ class Plugin extends AbstractBtpPlugin {
       }] }
     })
 
-    const ilpResponse = response.protocolData
-      .filter(p => p.protocolName === 'ilp')[0]
+    const ilpResponse = response.protocolData.filter(p => p.protocolName === 'ilp')[0]
+    const parsedIlpResponse = IlpPacket.deserializeIlpPacket(ilpResponse.data)
+
+    if (parsedIlpResponse.type === IlpPacket.Type.TYPE_ILP_FULFILL) {
+      if (!crypto.createHash('sha256')
+        .update(parsedIlpResponse.data.fulfillment)
+        .digest()
+        .equals(parsedPacket.data.executionCondition)) {
+        return IlpPacket.errorToReject(this._hostIldcpInfo.clientAddress,
+          new Errors.WrongConditionError(
+            'condition and fulfillment don\'t match. ' +
+            `condition=${parsedPacket.data.executionCondition.toString('hex')} ` +
+            `fulfillment=${parsedIlpResponse.data.fulfillment.toString('hex')}`))
+      }
+    }
 
     if (isPrepare && this._handlePrepareResponse) {
       try {
-        this._handlePrepareResponse(destination,
-          IlpPacket.deserializeIlpPacket(ilpResponse.data),
-          parsedPacket)
+        this._handlePrepareResponse(destination, parsedIlpResponse, parsedPacket)
       } catch (e) {
         return IlpPacket.errorToReject(this._hostIldcpInfo.clientAddress, e)
       }

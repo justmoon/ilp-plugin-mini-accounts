@@ -112,6 +112,10 @@ describe('Mini Accounts Plugin', () => {
 
   describe('sendData', function () {
     beforeEach(function () {
+      this.fulfillment = crypto.randomBytes(32)
+      this.condition = crypto.createHash('sha256')
+        .update(this.fulfillment)
+        .digest()
       this.plugin._call = async (dest, packet) => {
         return { protocolData: [ {
           protocolName: 'ilp',
@@ -122,6 +126,28 @@ describe('Mini Accounts Plugin', () => {
           })
         } ] }
       }
+    })
+
+    it('should return ilp reject when incorrect fulfill is returned', async function () {
+      this.fulfillment = Buffer.alloc(32)
+
+      const result = await this.plugin.sendData(IlpPacket.serializeIlpPrepare({
+        destination: this.from,
+        amount: '123',
+        executionCondition: this.condition,
+        expiresAt: new Date(Date.now() + 10000),
+        data: Buffer.alloc(0)
+      }))
+
+      const parsed = IlpPacket.deserializeIlpPacket(result)
+
+      assert.equal(parsed.typeString, 'ilp_reject')
+      assert.deepEqual(parsed.data, {
+        code: 'F05',
+        triggeredBy: 'test.example',
+        message: `condition and fulfillment don't match. condition=${this.condition.toString('hex')} fulfillment=0000000000000000000000000000000000000000000000000000000000000000`,
+        data: Buffer.alloc(0)
+      })
     })
 
     it('should return ilp reject when _handlePrepareResponse throws', async function () {

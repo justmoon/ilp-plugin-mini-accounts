@@ -298,7 +298,7 @@ class Plugin extends AbstractBtpPlugin {
     }
 
     if (this._handleCustomData) {
-      this._trace('passing non-ILDCP data to custom handler')
+      this._log.trace('passing non-ILDCP data to custom handler')
       return this._handleCustomData(from, btpPacket)
     }
 

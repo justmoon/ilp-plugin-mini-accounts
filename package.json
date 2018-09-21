@@ -3,7 +3,7 @@
   "version": "3.5.1",
   "description": "Plugin that implements a mini ephemeral ledger",
   "main": "index.js",
-  "types": "src/index.d.js",
+  "types": "src/index.d.ts",
   "scripts": {
     "build": "tsc --project .",
     "test": "mocha",

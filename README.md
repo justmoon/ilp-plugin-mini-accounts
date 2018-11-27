@@ -1,5 +1,7 @@
 # ILP Plugin Mini-Accounts
 
+[![Greenkeeper badge](https://badges.greenkeeper.io/interledgerjs/ilp-plugin-mini-accounts.svg)](https://greenkeeper.io/)
+
 - [Description](#description)
 - [Example](#example)
 
